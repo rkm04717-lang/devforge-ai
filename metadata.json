@@ -1,0 +1,6 @@
+{
+  "name": "DEVFORGE AI",
+  "description": "AI-powered development platform for building websites, applications, games and software.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

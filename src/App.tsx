@@ -111,28 +111,14 @@ export default function App() {
   const [transactions, setTransactions] = useState<TokenTransaction[]>(() => {
     try {
       const cached = localStorage.getItem(STORAGE_TX_KEY);
-      if (cached) return JSON.parse(cached);
-    } catch (e) {}
-    return [
-      {
-        id: 'tx_init_1',
-        userId: 'devforge_starter',
-        action: 'Welcome Tokens Granted',
-        tokensUsed: 1500,
-        balanceAfter: 1500,
-        type: 'credit',
-        timestamp: new Date(Date.now() - 3600 * 24 * 1000 * 2).toISOString()
-      },
-      {
-        id: 'tx_init_2',
-        userId: 'devforge_starter',
-        action: 'Starter Tokens Granted',
-        tokensUsed: 3000,
-        balanceAfter: 4500,
-        type: 'credit',
-        timestamp: new Date(Date.now() - 3600 * 24 * 1000 * 2 + 500).toISOString()
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(t => t && t.userId !== 'devforge_starter');
+        }
       }
-    ];
+    } catch (e) {}
+    return [];
   });
 
   // Real User Projects state:
@@ -222,6 +208,19 @@ export default function App() {
           if (data.transactions && Array.isArray(data.transactions) && data.transactions.length > 0) {
             setTransactions(data.transactions);
           }
+
+          // Fetch user projects from durable server store
+          try {
+            const projRes = await fetch('/api/projects', { headers });
+            if (projRes.ok) {
+              const projData = await projRes.json();
+              if (projData.projects && Array.isArray(projData.projects)) {
+                setAllProjects(projData.projects);
+              }
+            }
+          } catch (projErr) {
+            console.warn('Failed to sync projects from server:', projErr);
+          }
         } else if (res.status === 401) {
           // Token expired or invalid
           setSessionToken('');
@@ -233,6 +232,7 @@ export default function App() {
             createdAt: new Date().toISOString(),
             role: 'Guest Architect'
           });
+          setAllProjects([]);
         }
       } catch (err) {
         console.warn('Backend sync offline, operating in client mode');
@@ -282,6 +282,20 @@ export default function App() {
     setIsAuthModalOpen(false);
     setIsAuthPromptOpen(false);
 
+    // Fetch user's server-persisted projects
+    if (data.sessionToken) {
+      fetch('/api/projects', {
+        headers: { 'x-devforge-session': data.sessionToken }
+      })
+        .then(res => res.json())
+        .then(projData => {
+          if (projData.projects && Array.isArray(projData.projects)) {
+            setAllProjects(projData.projects);
+          }
+        })
+        .catch(() => {});
+    }
+
     // If the user previously clicked New Project, return them to the flow and open the creation screen automatically
     if (pendingOpenNewProjectAfterAuth) {
       setPendingOpenNewProjectAfterAuth(false);
@@ -300,6 +314,16 @@ export default function App() {
     if (activeProject?.id === updated.id) {
       setActiveProject(updated);
     }
+    if (sessionToken) {
+      fetch('/api/projects', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devforge-session': sessionToken,
+        },
+        body: JSON.stringify(updated),
+      }).catch(err => console.warn('Failed to update project on server:', err));
+    }
   };
 
   const handleDeleteProject = (projectId: string) => {
@@ -308,6 +332,14 @@ export default function App() {
     if (activeProject?.id === projectId) {
       setActiveProject(null);
       setCurrentView('dashboard');
+    }
+    if (sessionToken) {
+      fetch(`/api/projects/${projectId}`, {
+        method: 'DELETE',
+        headers: {
+          'x-devforge-session': sessionToken,
+        },
+      }).catch(err => console.warn('Failed to delete project on server:', err));
     }
   };
 
@@ -319,6 +351,18 @@ export default function App() {
     setAllProjects(prev => [projectWithUser, ...prev]);
     setActiveProject(projectWithUser);
     setCurrentView('workspace');
+
+    // Persist project to server durable store
+    if (sessionToken) {
+      fetch('/api/projects', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-devforge-session': sessionToken,
+        },
+        body: JSON.stringify(projectWithUser),
+      }).catch(err => console.warn('Failed to persist project to server:', err));
+    }
 
     // Update local wallet and transactions
     setWallet(prev => ({
@@ -432,6 +476,10 @@ export default function App() {
     setPendingOpenNewProjectAfterAuth(false);
     setIsNewProjectOpen(false);
     setIsAuthPromptOpen(false);
+    setAllProjects([]);
+    setActiveProject(null);
+    setCurrentView('dashboard');
+    localStorage.removeItem(STORAGE_PROJECTS_KEY);
     setWallet({
       welcomeTokens: 1500,
       starterTokens: 3000,
@@ -570,6 +618,7 @@ export default function App() {
             onBack={() => setCurrentView('dashboard')}
             onUpdateProject={handleUpdateProject}
             onDeductTokens={handleDeductTokens}
+            onWalletUpdate={setWallet}
           />
         ) : currentView === 'workspace' ? (
           <div className="flex-1 flex flex-col items-center justify-center p-16 text-center space-y-4 max-w-xl mx-auto">

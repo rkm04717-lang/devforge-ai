@@ -34,7 +34,8 @@ import {
   Code,
   ShieldCheck,
   AlertTriangle,
-  Edit3
+  Edit3,
+  Columns
 } from 'lucide-react';
 import { 
   Project, 
@@ -47,6 +48,7 @@ import {
 } from '../types';
 import { TOKEN_CONFIG, getEstimatedCost } from '../tokenConfig';
 import { downloadProjectAsZip } from '../utils/zipExport';
+import { AiEngineerChat } from './AiEngineerChat';
 
 interface WorkspaceProps {
   project: Project;
@@ -55,6 +57,7 @@ interface WorkspaceProps {
   onBack: () => void;
   onUpdateProject: (updated: Project) => void;
   onDeductTokens: (amount: number, action: string) => Promise<boolean>;
+  onWalletUpdate?: (wallet: TokenWallet) => void;
 }
 
 interface ChatMessage {
@@ -76,7 +79,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   sessionToken,
   onBack,
   onUpdateProject,
-  onDeductTokens
+  onDeductTokens,
+  onWalletUpdate
 }) => {
   // Active File & Tabs State
   const [openFiles, setOpenFiles] = useState<string[]>(() => {
@@ -86,6 +90,8 @@ export const Workspace: React.FC<WorkspaceProps> = ({
     const defaultFile = project.files.find(f => f.path === 'index.html' || f.path === 'game.js' || f.path === 'app.js');
     return defaultFile ? defaultFile.path : (project.files[0]?.path || '');
   });
+
+  const [centerView, setCenterView] = useState<'editor' | 'preview' | 'split'>('editor');
 
   const [searchFilter, setSearchFilter] = useState('');
   const [isCopied, setIsCopied] = useState(false);
@@ -737,97 +743,251 @@ export const Workspace: React.FC<WorkspaceProps> = ({
           </div>
         </div>
 
-        {/* CENTER: Editor & Code Viewer (Desktop: 6 cols, Mobile: full if tab) */}
-        <div className={`col-span-12 lg:col-span-6 bg-[#090d16] border-r border-slate-800 flex flex-col ${
-          activeMobileTab === 'editor' ? 'block' : 'hidden lg:flex'
+        {/* CENTER: Editor & Code Viewer / Live Preview Workspace (Desktop: 6 cols, Mobile: full if tab) */}
+        <div className={`col-span-12 lg:col-span-6 bg-[#090d16] border-r border-slate-800 flex flex-col h-full overflow-hidden ${
+          activeMobileTab === 'editor' || activeMobileTab === 'preview' || activeMobileTab === 'console' ? 'block' : 'hidden lg:flex'
         }`}>
-          {/* File Tabs Bar */}
-          <div className="h-9 bg-[#070a12] border-b border-slate-800/90 flex items-center overflow-x-auto px-2 gap-1">
-            {openFiles.map(path => {
-              const isActive = path === activeFilePath;
-              return (
-                <div
-                  key={path}
-                  onClick={() => setActiveFilePath(path)}
-                  className={`h-7 px-3 rounded-t-md text-xs font-mono flex items-center gap-2 cursor-pointer border-t border-x transition-colors ${
-                    isActive 
-                      ? 'bg-[#090d16] text-cyan-300 border-slate-700 font-semibold' 
-                      : 'bg-transparent text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-900/40'
-                  }`}
-                >
-                  <span>{path}</span>
-                  <button
-                    onClick={(e) => handleCloseTab(path, e)}
-                    className="p-0.5 hover:text-rose-400 transition-colors"
+          {/* File Tabs & View Switcher Bar */}
+          <div className="h-9 bg-[#070a12] border-b border-slate-800/90 flex items-center justify-between px-2 gap-1 overflow-x-auto flex-shrink-0">
+            {/* Open Files Tabs */}
+            <div className="flex items-center gap-1 overflow-x-auto">
+              {openFiles.map(path => {
+                const isActive = path === activeFilePath;
+                return (
+                  <div
+                    key={path}
+                    onClick={() => {
+                      setActiveFilePath(path);
+                      if (centerView === 'preview') setCenterView('editor');
+                    }}
+                    className={`h-7 px-2.5 rounded-t-md text-xs font-mono flex items-center gap-2 cursor-pointer border-t border-x transition-colors ${
+                      isActive 
+                        ? 'bg-[#090d16] text-cyan-300 border-slate-700 font-semibold' 
+                        : 'bg-transparent text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-900/40'
+                    }`}
                   >
-                    <X className="w-2.5 h-2.5" />
+                    <span className="truncate max-w-[120px]">{path}</span>
+                    <button
+                      onClick={(e) => handleCloseTab(path, e)}
+                      className="p-0.5 hover:text-rose-400 transition-colors cursor-pointer"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* View Mode Segmented Controls */}
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <div className="bg-[#0b101c] p-0.5 rounded-md border border-slate-800 flex items-center text-[11px] font-mono">
+                <button
+                  onClick={() => setCenterView('editor')}
+                  className={`px-2 py-0.5 rounded flex items-center gap-1 transition-colors cursor-pointer ${
+                    centerView === 'editor' ? 'bg-slate-800 text-cyan-300 font-bold' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="Code Editor View"
+                >
+                  <Code className="w-3 h-3" />
+                  <span className="hidden sm:inline">Code</span>
+                </button>
+                <button
+                  onClick={() => setCenterView('preview')}
+                  className={`px-2 py-0.5 rounded flex items-center gap-1 transition-colors cursor-pointer ${
+                    centerView === 'preview' ? 'bg-slate-800 text-cyan-300 font-bold' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="Live Preview View"
+                >
+                  <Play className="w-3 h-3 text-emerald-400" />
+                  <span className="hidden sm:inline">Preview</span>
+                </button>
+                <button
+                  onClick={() => setCenterView('split')}
+                  className={`hidden md:flex px-2 py-0.5 rounded items-center gap-1 transition-colors cursor-pointer ${
+                    centerView === 'split' ? 'bg-slate-800 text-cyan-300 font-bold' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="Split Code & Preview"
+                >
+                  <Columns className="w-3 h-3 text-cyan-400" />
+                  <span>Split</span>
+                </button>
+              </div>
+
+              {/* Preview Controls (when preview or split active) */}
+              {(centerView === 'preview' || centerView === 'split' || activeMobileTab === 'preview') && isBrowserPreviewSupported && (
+                <div className="flex items-center gap-1 text-slate-400 pl-1 border-l border-slate-800">
+                  <button
+                    onClick={() => setPreviewDevice('desktop')}
+                    className={`p-1 rounded cursor-pointer ${previewDevice === 'desktop' ? 'text-cyan-400 bg-slate-800' : 'hover:text-slate-200'}`}
+                    title="Desktop"
+                  >
+                    <Monitor className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => setPreviewDevice('tablet')}
+                    className={`p-1 rounded cursor-pointer ${previewDevice === 'tablet' ? 'text-cyan-400 bg-slate-800' : 'hover:text-slate-200'}`}
+                    title="Tablet"
+                  >
+                    <Tablet className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => setPreviewDevice('mobile')}
+                    className={`p-1 rounded cursor-pointer ${previewDevice === 'mobile' ? 'text-cyan-400 bg-slate-800' : 'hover:text-slate-200'}`}
+                    title="Mobile"
+                  >
+                    <Smartphone className="w-3 h-3" />
+                  </button>
+                  <button
+                    onClick={() => setPreviewKey(k => k + 1)}
+                    className="p-1 rounded hover:text-slate-200 cursor-pointer"
+                    title="Reload Preview"
+                  >
+                    <RefreshCw className="w-3 h-3" />
                   </button>
                 </div>
-              );
-            })}
-          </div>
+              )}
 
-          {/* Editor Header Bar */}
-          <div className="h-8 bg-[#0b101c] border-b border-slate-800/80 px-3 flex items-center justify-between text-xs font-mono text-slate-400">
-            <span className="truncate">{activeFilePath}</span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleExecuteAIAction('EXPLAIN')}
-                className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-cyan-400 text-[11px] transition-colors"
-              >
-                Explain Code (10 T)
-              </button>
-              <button
-                onClick={handleCopyCode}
-                className="p-1 rounded text-slate-400 hover:text-white transition-colors"
-                title="Copy code"
-              >
-                {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
+              {/* Copy Code (when editor active) */}
+              {(centerView === 'editor' || centerView === 'split') && (
+                <button
+                  onClick={handleCopyCode}
+                  className="p-1 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  title="Copy code"
+                >
+                  {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+              )}
             </div>
           </div>
 
-          {/* Code Viewer / Editor Area */}
-          <div className="flex-1 relative overflow-hidden bg-[#070a12] flex">
-            {/* Line Numbers Simulation with synchronized scroll */}
-            <div 
-              ref={lineNumbersRef}
-              className="w-10 bg-[#070a12] select-none text-slate-600 font-mono text-xs py-3 text-right pr-2 border-r border-slate-800/60 overflow-hidden leading-5 pointer-events-none"
-            >
-              {Array.from({ length: Math.max(30, activeCodeContent.split('\n').length) }).map((_, i) => (
-                <div key={i}>{i + 1}</div>
-              ))}
-            </div>
+          {/* Main Center Display: Editor / Preview / Split */}
+          <div className="flex-1 relative overflow-hidden bg-[#070a12] flex flex-col min-h-0">
+            {/* Split Mode: 2 Columns */}
+            {centerView === 'split' && activeMobileTab !== 'preview' && activeMobileTab !== 'console' ? (
+              <div className="flex-1 grid grid-cols-2 overflow-hidden h-full">
+                {/* Left: Code Editor */}
+                <div className="h-full border-r border-slate-800 flex overflow-hidden">
+                  <div 
+                    ref={lineNumbersRef}
+                    className="w-10 bg-[#070a12] select-none text-slate-600 font-mono text-xs py-3 text-right pr-2 border-r border-slate-800/60 overflow-hidden leading-5 pointer-events-none"
+                  >
+                    {Array.from({ length: Math.max(30, activeCodeContent.split('\n').length) }).map((_, i) => (
+                      <div key={i}>{i + 1}</div>
+                    ))}
+                  </div>
+                  <textarea
+                    ref={textareaRef}
+                    value={activeCodeContent}
+                    onChange={handleCodeChange}
+                    spellCheck={false}
+                    className="flex-1 bg-transparent text-slate-200 font-mono text-xs p-3 leading-5 resize-none focus:outline-none overflow-auto selection:bg-cyan-500/30 whitespace-pre"
+                  />
+                </div>
 
-            {/* Live Textarea Code Editor */}
-            <textarea
-              ref={textareaRef}
-              value={activeCodeContent}
-              onChange={handleCodeChange}
-              onScroll={(e) => {
-                if (lineNumbersRef.current) {
-                  lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
-                }
-              }}
-              spellCheck={false}
-              className="flex-1 bg-transparent text-slate-200 font-mono text-xs p-3 leading-5 resize-none focus:outline-none overflow-auto selection:bg-cyan-500/30 whitespace-pre"
-            />
+                {/* Right: Live Preview */}
+                <div className="h-full bg-[#05070c] flex items-center justify-center p-2 overflow-hidden">
+                  {isBrowserPreviewSupported ? (
+                    <div className="w-full h-full border border-slate-800 rounded-lg overflow-hidden bg-white shadow-xl">
+                      <iframe
+                        key={previewKey}
+                        title="Live Preview Split"
+                        srcDoc={generatePreviewSrcDoc()}
+                        sandbox="allow-scripts allow-modals allow-same-origin"
+                        className="w-full h-full border-none"
+                      />
+                    </div>
+                  ) : (
+                    <div className="text-center p-4 text-xs text-slate-400">
+                      CLI / Backend project. Run with <code className="text-cyan-400 font-mono">npm start</code>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (centerView === 'preview' || activeMobileTab === 'preview') && activeMobileTab !== 'editor' && activeMobileTab !== 'console' ? (
+              /* Live Preview Full View */
+              <div className="flex-1 bg-[#05070c] flex items-center justify-center p-3 overflow-hidden">
+                {isBrowserPreviewSupported ? (
+                  <div 
+                    className={`h-full border border-slate-800 rounded-lg overflow-hidden bg-white shadow-2xl transition-all duration-300 ${
+                      previewDevice === 'mobile' ? 'w-[375px]' :
+                      previewDevice === 'tablet' ? 'w-[768px]' : 'w-full'
+                    }`}
+                  >
+                    <iframe
+                      key={previewKey}
+                      title="Live Preview"
+                      srcDoc={generatePreviewSrcDoc()}
+                      sandbox="allow-scripts allow-modals allow-same-origin"
+                      className="w-full h-full border-none"
+                    />
+                  </div>
+                ) : (
+                  <div className="p-6 text-center max-w-sm space-y-4">
+                    <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-amber-400">
+                      <Terminal className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-200">Backend / CLI Project</h3>
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                        This project targets Node.js / Express and cannot be executed directly inside the browser sandbox.
+                      </p>
+                    </div>
+                    <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 text-left font-mono text-[11px] text-cyan-300 space-y-1">
+                      <div className="text-slate-500"># Run locally:</div>
+                      <div>npm install</div>
+                      <div>npm start</div>
+                    </div>
+                    <button
+                      onClick={() => downloadProjectAsZip(project)}
+                      className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-lg uppercase tracking-wider transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download Project ZIP</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* Code Editor Full View */
+              <div className="flex-1 flex overflow-hidden">
+                <div 
+                  ref={lineNumbersRef}
+                  className="w-10 bg-[#070a12] select-none text-slate-600 font-mono text-xs py-3 text-right pr-2 border-r border-slate-800/60 overflow-hidden leading-5 pointer-events-none"
+                >
+                  {Array.from({ length: Math.max(30, activeCodeContent.split('\n').length) }).map((_, i) => (
+                    <div key={i}>{i + 1}</div>
+                  ))}
+                </div>
+                <textarea
+                  ref={textareaRef}
+                  value={activeCodeContent}
+                  onChange={handleCodeChange}
+                  onScroll={(e) => {
+                    if (lineNumbersRef.current) {
+                      lineNumbersRef.current.scrollTop = e.currentTarget.scrollTop;
+                    }
+                  }}
+                  spellCheck={false}
+                  className="flex-1 bg-transparent text-slate-200 font-mono text-xs p-3 leading-5 resize-none focus:outline-none overflow-auto selection:bg-cyan-500/30 whitespace-pre"
+                />
+              </div>
+            )}
           </div>
 
-          {/* Bottom Console / Diagnostics Drawer */}
-          <div className="h-44 bg-[#080b13] border-t border-slate-800 flex flex-col">
+          {/* BOTTOM: Console / Build / Test Output Drawer */}
+          <div className="h-44 bg-[#080b13] border-t border-slate-800 flex flex-col flex-shrink-0">
             <div className="h-7 bg-[#0b0f19] border-b border-slate-800/80 px-3 flex items-center justify-between text-[11px] font-mono">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setConsoleTab('console')}
-                  className={`flex items-center gap-1.5 ${consoleTab === 'console' ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-slate-300'}`}
+                  className={`flex items-center gap-1.5 cursor-pointer ${consoleTab === 'console' ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-slate-300'}`}
                 >
                   <Terminal className="w-3 h-3" />
                   <span>Terminal Console</span>
                 </button>
                 <button
                   onClick={() => setConsoleTab('tests')}
-                  className={`flex items-center gap-1.5 ${consoleTab === 'tests' ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-slate-300'}`}
+                  className={`flex items-center gap-1.5 cursor-pointer ${consoleTab === 'tests' ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-slate-300'}`}
                 >
                   <ShieldCheck className="w-3 h-3 text-emerald-400" />
                   <span>Test Diagnostics {testReport ? `(${testReport.passedCount} Passed)` : ''}</span>
@@ -835,7 +995,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               </div>
               <button
                 onClick={() => setConsoleLogs([])}
-                className="text-[10px] text-slate-500 hover:text-slate-300"
+                className="text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer"
               >
                 Clear
               </button>
@@ -891,246 +1051,36 @@ export const Workspace: React.FC<WorkspaceProps> = ({
           </div>
         </div>
 
-        {/* RIGHT: Assistant or Live Preview */}
-        {/* On desktop, we show AI Assistant (4 cols), with a toggle for Live Preview, or tabbed views */}
-        <div className={`col-span-12 lg:col-span-4 bg-[#080b13] flex flex-col ${
-          activeMobileTab === 'assistant' || activeMobileTab === 'preview' ? 'block' : 'hidden lg:flex'
+        {/* RIGHT: AI ENGINEER CHAT (Desktop: 4 cols, Mobile: full if assistant tab) */}
+        <div className={`col-span-12 lg:col-span-4 bg-[#080b13] flex flex-col h-full overflow-hidden ${
+          activeMobileTab === 'assistant' ? 'block' : 'hidden lg:flex'
         }`}>
-          {/* Top Panel Mode Toggle: AI Assistant vs Live Preview */}
-          <div className="h-9 bg-[#0a0e19] border-b border-slate-800 px-3 flex items-center justify-between">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setActiveMobileTab('assistant')}
-                className={`px-2.5 py-1 rounded text-xs font-mono font-medium transition-colors ${
-                  activeMobileTab !== 'preview'
-                    ? 'bg-slate-800 text-white font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                AI Engineer
-              </button>
-              <button
-                onClick={() => setActiveMobileTab('preview')}
-                className={`px-2.5 py-1 rounded text-xs font-mono font-medium transition-colors ${
-                  activeMobileTab === 'preview'
-                    ? 'bg-slate-800 text-cyan-400 font-bold'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Live Preview
-              </button>
-            </div>
-
-            {activeMobileTab === 'preview' && isBrowserPreviewSupported && (
-              <div className="flex items-center gap-1 text-slate-400">
-                <button
-                  onClick={() => setPreviewDevice('desktop')}
-                  className={`p-1 rounded ${previewDevice === 'desktop' ? 'text-cyan-400 bg-slate-800' : 'hover:text-slate-200'}`}
-                  title="Desktop View"
-                >
-                  <Monitor className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => setPreviewDevice('tablet')}
-                  className={`p-1 rounded ${previewDevice === 'tablet' ? 'text-cyan-400 bg-slate-800' : 'hover:text-slate-200'}`}
-                  title="Tablet View"
-                >
-                  <Tablet className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => setPreviewDevice('mobile')}
-                  className={`p-1 rounded ${previewDevice === 'mobile' ? 'text-cyan-400 bg-slate-800' : 'hover:text-slate-200'}`}
-                  title="Mobile View"
-                >
-                  <Smartphone className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => setPreviewKey(k => k + 1)}
-                  className="p-1 rounded hover:text-slate-200"
-                  title="Reload Preview"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Sub-view: LIVE PREVIEW */}
-          {activeMobileTab === 'preview' ? (
-            <div className="flex-1 bg-[#05070c] flex items-center justify-center p-2 overflow-hidden">
-              {isBrowserPreviewSupported ? (
-                <div 
-                  className={`h-full border border-slate-800 rounded-lg overflow-hidden bg-white shadow-2xl transition-all duration-300 ${
-                    previewDevice === 'mobile' ? 'w-[375px]' :
-                    previewDevice === 'tablet' ? 'w-[768px]' : 'w-full'
-                  }`}
-                >
-                  <iframe
-                    key={previewKey}
-                    title="Live Preview"
-                    srcDoc={generatePreviewSrcDoc()}
-                    sandbox="allow-scripts allow-modals allow-same-origin"
-                    className="w-full h-full border-none"
-                  />
-                </div>
-              ) : (
-                /* Non-browser backend transparent instructions view */
-                <div className="p-6 text-center max-w-sm space-y-4">
-                  <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center mx-auto text-amber-400">
-                    <Terminal className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-200">Backend / CLI Project</h3>
-                    <p className="text-xs text-slate-400 mt-1 leading-relaxed">
-                      This project targets Node.js / Express and cannot be executed directly inside the browser sandbox.
-                    </p>
-                  </div>
-                  <div className="p-3 bg-slate-900 rounded-lg border border-slate-800 text-left font-mono text-[11px] text-cyan-300 space-y-1">
-                    <div className="text-slate-500"># Run locally:</div>
-                    <div>npm install</div>
-                    <div>npm start</div>
-                  </div>
-                  <button
-                    onClick={() => downloadProjectAsZip(project)}
-                    className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-lg uppercase tracking-wider transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download Project ZIP</span>
-                  </button>
-                </div>
-              )}
-            </div>
-          ) : (
-            /* Sub-view: AI ASSISTANT */
-            <div className="flex-1 flex flex-col overflow-hidden bg-[#080b13]">
-              {/* AI Quick Actions Bar */}
-              <div className="p-2 border-b border-slate-800/80 flex flex-wrap gap-1 bg-[#0a0e19]">
-                {[
-                  { action: 'FIX' as AIActionType, label: 'FIX', cost: 15, icon: Bug },
-                  { action: 'EXPLAIN' as AIActionType, label: 'EXPLAIN', cost: 10, icon: HelpCircle },
-                  { action: 'IMPROVE' as AIActionType, label: 'IMPROVE', cost: 25, icon: Sparkles },
-                  { action: 'ADD_FEATURE' as AIActionType, label: '+ FEATURE', cost: 45, icon: Plus },
-                  { action: 'REFACTOR' as AIActionType, label: 'REFACTOR', cost: 50, icon: Wrench },
-                  { action: 'OPTIMIZE' as AIActionType, label: 'OPTIMIZE', cost: 30, icon: Cpu },
-                ].map((act) => {
-                  const Icon = act.icon;
-                  return (
-                    <button
-                      key={act.action}
-                      onClick={() => handleExecuteAIAction(act.action)}
-                      disabled={isAiProcessing}
-                      className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-[10px] font-mono text-slate-300 hover:text-cyan-300 border border-slate-700/60 flex items-center gap-1 transition-colors"
-                    >
-                      <Icon className="w-2.5 h-2.5" />
-                      <span>{act.label}</span>
-                      <span className="text-[9px] text-slate-500">({act.cost}T)</span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Chat Message Scroll Area */}
-              <div className="flex-1 overflow-y-auto p-3 space-y-3 font-sans text-xs">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${
-                      msg.sender === 'user' ? 'items-end' : 'items-start'
-                    }`}
-                  >
-                    <div
-                      className={`max-w-[90%] p-3 rounded-xl leading-relaxed ${
-                        msg.sender === 'user'
-                          ? 'bg-cyan-950/70 border border-cyan-500/40 text-cyan-100 rounded-br-none'
-                          : 'bg-[#0f1422] border border-slate-800 text-slate-200 rounded-bl-none'
-                      }`}
-                    >
-                      <div className="whitespace-pre-wrap">{msg.text}</div>
-
-                      {/* Explanation Result Card */}
-                      {msg.explanationResult && (
-                        <div className="mt-3 pt-3 border-t border-slate-800 space-y-2 text-[11px] font-mono">
-                          <div className="text-cyan-400 font-bold">TECHNICAL ANALYSIS:</div>
-                          <p className="text-slate-300">{msg.explanationResult.technicalExplanation}</p>
-                          {msg.explanationResult.keyFunctions?.length > 0 && (
-                            <div>
-                              <strong className="text-slate-400">Key Functions:</strong>
-                              <ul className="list-disc list-inside text-slate-300">
-                                {msg.explanationResult.keyFunctions.map((fn, i) => <li key={i}>{fn}</li>)}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Debug Result Card */}
-                      {msg.debugResult && (
-                        <div className="mt-3 p-2.5 rounded bg-slate-900 border border-slate-800 text-[11px] space-y-1 font-mono">
-                          <div className="text-amber-400 font-bold">Root Cause:</div>
-                          <div className="text-slate-300">{msg.debugResult.whyItHappened}</div>
-                          <div className="text-emerald-400 mt-1 font-bold">Status: Verified & Patched</div>
-                        </div>
-                      )}
-
-                      {/* Affected files pill */}
-                      {msg.affectedFiles && msg.affectedFiles.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {msg.affectedFiles.map(af => (
-                            <span key={af} className="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-mono text-cyan-400">
-                              {af}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="text-[9px] font-mono text-slate-500 mt-1 px-1 flex items-center gap-2">
-                      <span>{msg.timestamp}</span>
-                      {msg.tokenCost && (
-                        <span className="text-cyan-400">-{msg.tokenCost} Forge Tokens</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-
-                {isAiProcessing && (
-                  <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 p-2">
-                    <div className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
-                    <span>Senior AI Engineer analyzing project context...</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Chat Input Bar */}
-              <div className="p-2.5 border-t border-slate-800 bg-[#07090e]">
-                <form
-                  onSubmit={e => {
-                    e.preventDefault();
-                    if (chatInput.trim() && !isAiProcessing) {
-                      handleExecuteAIAction('BUILD', chatInput.trim());
-                    }
-                  }}
-                  className="flex items-center gap-2"
-                >
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={e => setChatInput(e.target.value)}
-                    placeholder="Describe a change (e.g. Add dark mode, optimize loop)..."
-                    disabled={isAiProcessing}
-                    className="flex-1 bg-[#0d121e] border border-slate-700/80 focus:border-cyan-500 rounded-lg px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none font-sans"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!chatInput.trim() || isAiProcessing}
-                    className="p-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 text-white transition-colors"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                  </button>
-                </form>
-              </div>
-            </div>
-          )}
+          <AiEngineerChat
+            project={project}
+            wallet={wallet}
+            sessionToken={sessionToken}
+            activeFilePath={activeFilePath}
+            testReport={testReport}
+            consoleErrors={consoleLogs.filter(l => l.level === 'error')}
+            onOpenFile={(path) => {
+              handleOpenFile(path);
+              setCenterView('editor');
+              if (window.innerWidth < 1024) setActiveMobileTab('editor');
+            }}
+            onUpdateProject={onUpdateProject}
+            onRefreshPreview={() => {
+              setPreviewKey(k => k + 1);
+              setConsoleLogs(prev => [
+                ...prev,
+                { level: 'system', msg: `[DEVFORGE ENGINE] Live Preview reloaded with new changes.`, time: new Date().toLocaleTimeString() }
+              ]);
+            }}
+            onSwitchToPreview={() => {
+              setCenterView('preview');
+              if (window.innerWidth < 1024) setActiveMobileTab('preview');
+            }}
+            onWalletUpdate={onWalletUpdate}
+          />
         </div>
       </div>
     </div>

@@ -43,6 +43,23 @@ export interface ProjectPlan {
   executionNotice?: string;
 }
 
+export interface ChatMessage {
+  id: string;
+  sender: 'user' | 'ai' | 'system';
+  text: string;
+  timestamp: string;
+  affectedFiles?: string[];
+  proposedChanges?: { path: string; content: string }[];
+  actionType?: AIActionType | 'ANSWER';
+  debugResult?: AIDebugResult;
+  explanationResult?: AIExplanationResult;
+  tokenCost?: number;
+  previewUpdated?: boolean;
+  status?: 'sending' | 'sent' | 'error';
+  errorMessage?: string;
+  suggestedFollowUps?: string[];
+}
+
 export interface Project {
   id: string;
   userId: string;
@@ -55,6 +72,7 @@ export interface Project {
   status: 'draft' | 'planning' | 'forged' | 'testing' | 'error';
   createdAt: string;
   updatedAt: string;
+  chatHistory?: ChatMessage[];
 }
 
 export interface TokenWallet {
